@@ -1,0 +1,14 @@
+{
+    "manifest_version": 2,
+    "content_scripts": [ {
+        "exclude_globs":    [  ],
+        "include_globs":    [ "*" ],
+        "js":               [ "autoLattes.user.js" ],
+        "matches":          [
+                                "https://wwws.cnpq.br/cvlattesweb/PKG_MENU.menu?f_cod=*"
+                            ]
+    } ],
+    "description":  "autoLattes Desc",
+    "name":         "autoLattes",
+    "version":      "1"
+}
