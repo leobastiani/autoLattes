@@ -23,13 +23,14 @@ var execFunctionGlobal = function (fn) {
 }
 
 execFunctionGlobal(function() {
+    // var noop = function () {};
 
 
 /******************************************************
  * Variáveis e constantes
  ******************************************************/
 var TEST = {
-    enabled: false,
+    enabled: true,
     
     prodBib: {
         click1: true,
@@ -57,6 +58,10 @@ autoLattes = {
     // mensagem padrão
     msg: {},
 
+    // todas as mensagens que estão no autoLattes
+    msgs: [],
+
+    // reinicia a mensagem
     resetMsg: function () {
         debug('autoLattes.resetMsg()');
         // mensagem original
@@ -64,12 +69,38 @@ autoLattes = {
         autoLattes.srcMsg = autoLattes.msg;
     },
 
+
     saveMsg: function () {
         // como salvar a msg
         debug('Mensagem salva: ', autoLattes.srcMsg);
 
         // adicionando a msg ao menu
         var msg = autoLattes.srcMsg;
+
+        autoLattes.msgs.push(msg);
+
+        // reseto a mensagem
+        autoLattes.resetMsg();
+
+
+        // faço um html para a msg aparecer
+        var elem = $('<a>'+autoLattes.Msg.nome(msg)+'</a>');
+        elem.appendTo('#autoLattes-msgs');
+        elem.click(function(event) {
+            autoLattes.File.downloadStringAsFile('oi', msg);
+        });
+    },
+
+    isLastDiv: function ($) {
+        return $('.areaSelecao:visible').length >= 1;
+    },
+
+
+    // funções que serão responsáveis por tratar mensagens
+    Msg: {
+        nome: function(msg) {
+            return 'oi';
+        },
     },
 
 };
@@ -98,14 +129,28 @@ var documentReady = function() {
         width: '100px',
         minHeight: '100px',
     });
+    autoLattes.div.append('<button id="autoLattes-btn">Clique aqui para inserir.</button>');
+    autoLattes.div.append('<div id="autoLattes-msgs">Listas</div>');
 
 
 
 
     // callback do modal de edição
     var onModal = function (e, name, $) {
+        // para depuração, posso usar j ao invés de $
         j = $;
+
         debug('onModal', this);
+        // adiciona a classe autoLattes pra saber se já foi processado
+        if($(this).find('form').length) {
+            // tem um form
+            var f = $(this).find('form:eq(0)');
+            if(f.hasClass('autoLattes')) {
+                return ;
+            }
+            f.addClass('autoLattes');
+        }
+
 
         // devo informar o resetMsg para o botão adicionar
         $('.adicionar').click(function(e) {
@@ -224,8 +269,8 @@ var documentReady = function() {
                     debugMsg('Botão SALVAR clicado, depois de mudar.');
 
                     // a última div, tem barra de navegação do lado
-                    lastDiv = $('.areaSelecao').length >= 1;
-                    if(!lastDiv) {
+                    var isLastDiv = autoLattes.isLastDiv($);
+                    if(!isLastDiv) {
                         // não estou na ultima div, ou seja
                         // vale essa regra para saber se posso continuar
                         if($('input:visible').length) {
@@ -263,6 +308,26 @@ var documentReady = function() {
         // suggest-wrapper
         if($(this).is('iframe')) {
 
+            // a função chamaUrl é um ajax
+            // que não utiliza os meios de ajax pelo jQuery
+            // vamos mudar a função para definir que todas
+            // as chamadas de ajax sejam pelo jQuery
+            var win = $(this).window();
+            if(win.chamaUrl) {
+                win.chamaUrl = function (arg) {
+                    win.$.get(arg, function(data) {
+                        // vamos encapsular o eval
+                        // pq o this deve ser o window
+                        // em que ele está
+                        var s = win.document.createElement('script');
+                        s.innerHTML = '(function(){'+data+'}());';
+                        win.document.body.appendChild(s);
+                    });
+                    return false;
+                }
+            }
+
+
             var doc = $(this).document();            
 
             $(doc).on('edit', 'body', function(e) {
@@ -296,7 +361,7 @@ var documentReady = function() {
 
         // após terminar todos os passos da função modal
         // devo chamar a próxima função de test
-        test.cb();
+        test.onModal();
 
     } // onModal
 
@@ -351,10 +416,9 @@ var documentReady = function() {
     // 
     // toda vez que clico num menu que está na barra de navegação, em cima
     // nos links a direita inferior
-    $('.menucent li a, #list_example a').click(function(e) {
-        autoLattes.resetMsg();
-    });
-    
+    /*$(document.body).on('click', '.megamenu li a', autoLattes.resetMsg);
+    $(document.body).on('click', '#list_example a', autoLattes.resetMsg);*/
+    $('.megamenu li a, #list_example a').click(autoLattes.resetMsg);
 
 
 }
@@ -435,7 +499,15 @@ window.jQueryFn = {
         events: function (event) {
             try {
                 
-                var result = this.data('events')[event];
+                var result = this.data('events');
+                if(typeof result !== 'object') {
+                    return [];
+                }
+
+
+                if(event) {
+                    result = result[event];
+                }
                 if(typeof result !== 'object') {
                     return [];
                 }
@@ -510,7 +582,9 @@ window.jQueryFn = {
         document: function () {
             if($.document === undefined) {
                 if($(this).is('iframe')) {
-                    $.document = $(this)[0].contentWindow.document;
+                    $.window = $(this)[0].contentWindow;
+                    $.document = $.window.document;
+                    $.window.test = window.test;
                 }
                 else {
                     // não é um iframe, n consigo determinar o document
@@ -655,15 +729,15 @@ test.$ = $;
 
 // clica nos menus de cima
 test.menuClick = function (name, cb) {
-    test.setNextCb(cb);
+    test.onNextModal(cb);
 
-    $('a').filter(function(index) {
+    var elem = $('.megamenu a').filter(function(index) {
         return $(this).text() == name;
-    }).click();
+    }).first().click();
 }
 
 test.adicionar = function (cb) {
-    test.setNextCb(cb);
+    test.onNextModal(cb);
 
     var $ = test.$;
     $('.adicionar:visible').click();
@@ -672,25 +746,23 @@ test.adicionar = function (cb) {
 
 
 // o próximo callback dos tests
-test.nextCb = null;
-test.setNextCb = function (cb) {
+test._onModal = [];
+test.onNextModal = function (cb) {
     if(cb) {
-        test.nextCb = cb;
+        test._onModal.push(cb);
     }
     else {
-        test.nextCb = null;
+        test._onModal.push(null);
     }
+    return test;
 }
 
 // quando eu chamo o callback
-test.cb = function () {
-    var cb = test.nextCb;
-    test.nextCb = null;
-
-    var $ = test.$;
+test.onModal = function () {
+    var cb = test._onModal.pop();
 
     if(cb) {
-        cb.apply(this, arguments);
+        cb.apply(this);
     }
 }
 
@@ -729,7 +801,7 @@ test.val = function (index, text) {
 test.confirm = function (cb) {
     var $ = test.$;
 
-    test.setNextCb(cb);
+    test.onNextModal(cb);
     var btn = $('.botao.salvar:visible');
     if(btn.text() == 'Confirmar') {
         btn.click();
@@ -741,7 +813,7 @@ test.confirm = function (cb) {
 }
 
 
-test.after = function () {
+test.nextModal = function (cb) {
     test.setNextCb.apply(this, arguments);
     return test;
 }
@@ -751,25 +823,129 @@ test.getDocument = function () {
     return $($.document);
 }
 
-/*test.ajax = function (fnBefore, fnCb, time) {
-    time = time !== undefined ? time : 500;
-    var self = this;
-    test.getDocument().one('ajaxComplete', function (e, xhr, settings) {
-        var args = arguments;
-        debugger;
-        test.val('Volume', '1');
-        // setTimeout(function() {fnCb.apply(self, args);}, time);
-    });
-    fnBefore.apply(self);
-}*/
-
 
 test.sleep = function (interval, fn) {
     setTimeout(fn, interval);
     return test;
 }
 
+test.asserts = {};
+
+test.asserts.qntMsg = function (dif) {
+    var qntMsg = autoLattes.msgs.length;
+    if(dif === undefined) {
+        // devo gravar a quantidade de mensagens
+        test._qntMsg = qntMsg;
+        return test;
+    }
+
+    // se n, devo ver se a diferença é igual
+    test.assert(qntMsg - test._qntMsg === dif);
+}
+
+
+test.assert = function (bool) {
+    if(!bool) {
+        debugger;
+        throw new Error("autoLattes: Assert");
+    }
+    return test;
+}
+
+
+/**
+ * CONFIRM
+ * Confirm true e confirm false são funções que fazem a função confirm retornar
+ * true or false
+ * uma única vez de confirm
+ */
+window._confirm = window.confirm;
+test.confirmTrue = function () {
+    var w = test.$.window;
+    w.confirm = function() {
+        w.confirm = window._confirm;
+        return true;
+    };
+}
+test.confirmFalse = function () {
+    var w = test.$.window;
+    w.confirm = function() {
+        w.confirm = window._confirm;
+        return false;
+    };
+}
+
+
+test.delete = function (index, cb) {
+    index = index !== undefined ? index : 0;
+    if(typeof index === "function") {
+        cb = index;
+        index = 0;
+    }
+    var $ = test.$;
+
+    // clica na linha da tabela para se excluir
+    $('.int tr').eq(index).click();
+    test.onNextModal(function () {
+        // haverá um confirm, devo retornar true nele
+        test.confirmTrue();
+
+        test.$('.botao.excluir a:visible').click();
+        test.onNextModal(cb);
+    });
+}
+
+
+test.ajax = function (init, onAjax) {
+    /**
+     * Função não testada, o que ela deveria fazer
+     * toda vez q um ajax for executado, uma função
+     * onAjax deve ser executada posteriormente
+     */
+    var $ = test.$;
+    if(onAjax === undefined) {
+        onAjax = init;
+        init = $.noop;
+    }
+    if(onAjax === undefined) {
+        onAjax = $.noop;
+    }
+
+    $($.document).one('ajaxComplete', function (e, xhr, opt) {
+        // devo mudar o success de opt
+        onAjax();
+    });
+
+    // inicializa
+    init.apply(this);
+    return test;
+}
+
+test.blur = function (index, val) {
+    var $ = test.$;
+
+    var elem = test.val(index);
+    // devo clicar nele primeiro
+    elem.click();
+    // digitar a informação
+    elem.val(val);
+    // acionar o blur
+    elem[0].onblur();
+
+    return test;
+}
+
+test.close = function () {
+    window.jQuery('.superior_direito:visible img').click();
+}
+
 var testNewProdBibliografica = function () {
+    /**
+     * Teste bem sucedido
+     */
+    // atual quantidade de mensagens
+    test.asserts.qntMsg();
+
     test.menuClick('Artigos completos publicados em periódicos', function () {
         test.adicionar(function () {
             test.val(0, example.doi);
@@ -778,13 +954,24 @@ var testNewProdBibliografica = function () {
                 test.val(2, 1);
                 test.val(3, 2);
                 test.val(4, 3);
-                test.confirm().after(function () {
-                    test.val(0, '10.1016/j.infsof.2016.04.003')[0].onblur();
-                    test.sleep(500, function () {
-                        test.val('Volume', '1');
-                        test.val('Página inicial/ Número artigo eletrônico', '100');
-                        test.sleep(1000, function () {
+                test.confirm(function () {
+                    // o primeiro ajax não faz nd
+                    // o segundo que vem coisa
+                    test.ajax(function () {
+                        test.blur(0, '10.1016/j.infsof.2016.04.003');
+                    }, function () {
+                        // segundo ajax
+                        test.ajax(function () {
+                            test.val('Volume', '1');
+                            test.val('Página inicial/ Número artigo eletrônico', '100');
                             test.confirm();
+                            // deve haver uma mensagem a mais
+                            test.asserts.qntMsg(1);
+                            test.onNextModal(function () {
+                                test.delete(function () {
+                                    test.close();
+                                });
+                            });
                         });
                     });
                 });
@@ -804,6 +991,65 @@ if(TEST.enabled) {
 
 // posso acessar o test de fora
 window.test = test;
+
+
+
+
+/******************************************************
+ * FileAPI
+ ******************************************************/
+autoLattes.File = {
+    ext: '.txt',
+
+    downloadStringAsFile: function(file_name, content) {
+        if(typeof content === "object") {
+            content = JSON.stringify(content);
+        }
+        var a = document.createElement('a');
+        a.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(content));
+        a.setAttribute('download', file_name+this.ext);
+        a.click();
+    },
+
+
+    readFile: function (cb) {
+        // cria um inputFile para ser clicado
+        var inputBtn = $('<input type="file" accept="'+this.ext+'">');
+        
+        inputBtn.on('change', function(e) {
+
+            var files = e.target.files;
+            var file = files[0];           
+            var reader = new FileReader();
+            reader.onload = function() {
+                // aqui está o o conteudo que acabei de ler
+                var data = this.result;
+
+                cb(data);
+            }
+
+            reader.readAsText(file);
+        });
+
+        // por ultimo, clicamos no botao
+        inputBtn.click();
+    },
+
+
+    readJson: function (cb) {
+        readFile(function (data) {
+            // leio ele como json
+            try {
+                var jsonData = JSON.parse(data);
+                cb(jsonData);
+            }
+            catch(e) {
+                console.log('Não foi possível ler o arquivo.');
+            } 
+        });
+    },
+};
+
 
 // fim
 });
