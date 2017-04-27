@@ -138,6 +138,7 @@ var documentReady = function() {
     // callback do modal de edição
     var onModal = function (e, name, $) {
         // para depuração, posso usar j ao invés de $
+        // posso remover depois
         j = $;
 
         debug('onModal', this);
@@ -896,28 +897,38 @@ test.delete = function (index, cb) {
 }
 
 
-test.ajax = function (init, onAjax) {
+test.ajax = function (n, init, onAjax) {
     /**
      * Função não testada, o que ela deveria fazer
      * toda vez q um ajax for executado, uma função
      * onAjax deve ser executada posteriormente
+     * a função onAjax só é acionada se n == 1
      */
     var $ = test.$;
-    if(onAjax === undefined) {
-        onAjax = init;
-        init = $.noop;
+    
+    if(arguments.length === 1) {
+        return arguments.callee(1, null, arguments[0]);
     }
-    if(onAjax === undefined) {
-        onAjax = $.noop;
+    if(arguments.length === 2) {
+        return arguments.callee(1, arguments[0], arguments[1]);
     }
 
     $($.document).one('ajaxComplete', function (e, xhr, opt) {
         // devo mudar o success de opt
-        onAjax();
+        if(n !== 1) {
+            // devo decrementar o n
+            test.ajax(n-1, null, onAjax);
+        }
+        else {
+            // o n é 1, devo chamar o onAjax
+            onAjax();
+        }
     });
 
     // inicializa
-    init.apply(this);
+    if(init) {
+        init.apply(this);
+    }
     return test;
 }
 
@@ -957,20 +968,16 @@ var testNewProdBibliografica = function () {
                 test.confirm(function () {
                     // o primeiro ajax não faz nd
                     // o segundo que vem coisa
-                    test.ajax(function () {
+                    test.ajax(2, function () {
                         test.blur(0, '10.1016/j.infsof.2016.04.003');
                     }, function () {
-                        // segundo ajax
-                        test.ajax(function () {
-                            test.val('Volume', '1');
-                            test.val('Página inicial/ Número artigo eletrônico', '100');
-                            test.confirm();
+                        test.val('Volume', '1');
+                        test.val('Página inicial/ Número artigo eletrônico', '100');
+                        test.confirm(function () {
                             // deve haver uma mensagem a mais
                             test.asserts.qntMsg(1);
-                            test.onNextModal(function () {
-                                test.delete(function () {
-                                    test.close();
-                                });
+                            test.delete(function () {
+                                test.close();
                             });
                         });
                     });
