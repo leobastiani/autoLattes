@@ -110,8 +110,19 @@ autoLattes = {
             msg.title = this.nome(msg);
             // se o título for vazio, mudo ele
             if(msg.title == '') {
-                var timeStr = date.getHours() + ':' + date.getMinutes() + ':' + date.getSeconds();
-                msg.title = 'Alteração em '+timeStr;
+                var twoDigits = function (str) {
+                    return ('0' + str).slice(-2);
+                };
+                var hours = twoDigits(date.getHours());
+                var minutes = twoDigits(date.getMinutes());
+                var day = twoDigits(date.getDate());
+                var mon = twoDigits(date.getMonth()+1);
+                var year = date.getFullYear();
+                var timeStr = date.toISOString().substr(0, 19).replace('T', ' ');
+                msg.title = 'Alteração em '+day+'-'+mon+'-'+year+' '+hours+':'+minutes;
+
+                // agora chamo a função de mudar de nome
+                this.changeName(msg);
             }
             
             // neste ponto, eu salvo a mensagem raiz com final
@@ -158,6 +169,17 @@ autoLattes = {
         },
 
 
+        // função para mudar o nome de uma mensagem
+        changeName: function (msg) {
+            var newTitle = window.prompt('autoLattes - Digite o nome da nova inserção:', msg.title);
+            if(newTitle) {
+                if(newTitle != '') {
+                    msg.title = newTitle;
+                }
+            }
+        },
+
+
         /**
          * Atualiza a div sempre que uma nova msg for inserida
          */
@@ -175,19 +197,43 @@ autoLattes = {
 
             msgs.forEach(function (msg, index) {
                 // faço um html para a msg aparecer
-                var elem = $('<a>'+autoLattes.Msg.nome(msg)+'</a>');
+                var elem = $('<div class="autoLattes-msg"><div class="autoLattes-msg-name">'+autoLattes.Msg.nome(msg)+'</div><div class="autoLattes-msg-X">X</div></div>');
                 elem.css({
                     display: 'block',
                     cursor: 'pointer',
                     textDecoration: 'underline',
                     color: 'red',
                     fontWeight: 'bold',
+                    border: '4px red dotted',
+                    borderStyle: 'dotted',
+                    marginTop: '13px',
                 });
-                elem.addClass('autoLattes-msg');
-                elem.appendTo('#autoLattes-msgs');
-                elem.click(function(event) {
+                elem.find('.autoLattes-msg-name').css({
+                    width: '80%',
+                    display: 'inline-table',
+                    textAlign: 'left',
+                });
+                elem.find('.autoLattes-msg-X').css({
+                    width: '17%',
+                    display: 'inline-table',
+                    textAlign: 'right',
+                });
+
+                // evento de click
+                elem.find('.autoLattes-msg-name').click(function(event) {
                     autoLattes.File.write(autoLattes.Msg.nome(msg), msg);
                 });
+                elem.find('.autoLattes-msg-X').click(function(event) {
+                    if(!window.confirm('Tem certeza da exclusão?')) {
+                        return ;
+                    }
+                    autoLattes.Storage.get().splice(index, 1);
+                    autoLattes.Storage.set();
+                    autoLattes.Msg.update();
+                });
+
+                // insere embaixo
+                elem.appendTo('#autoLattes-msgs');
             });
         }
 
@@ -777,15 +823,18 @@ autoLattes = {
         max: 6,
         get: function () {
             if(this.ptr === null) {
-                // se há sessionStorage
-                if(window.sessionStorage) {
-                    if(window.sessionStorage.getItem(this.itemName)) {
-                        this.ptr = JSON.parse(window.sessionStorage.getItem(this.itemName));
+                // se há localStorage
+                if(window.localStorage) {
+                    if(window.localStorage.getItem(this.itemName)) {
+                        try {
+                            this.ptr = JSON.parse(window.localStorage.getItem(this.itemName));
+                            return this.ptr;
+                        } catch(e) {
+                        }
                     }
                 }
-                else {
-                    this.ptr = [];
-                }
+                // define ele como vazio
+                this.ptr = [];
             }
             return this.ptr;
         },
@@ -793,14 +842,13 @@ autoLattes = {
             if(val) {
                 this.ptr = val;
             }
-            if(window.sessionStorage) {
-                window.sessionStorage.setItem(this.itemName, JSON.stringify(this.ptr));
+            if(window.localStorage) {
+                window.localStorage.setItem(this.itemName, JSON.stringify(this.ptr));
             }
         },
 
         // insere no começo
         unshift: function (val) {
-            debugger;
             // atualizo
             this.get();
             this.ptr.unshift(val);
@@ -835,11 +883,12 @@ var documentReady = function() {
         top: '10px',
         background: '#FFF',
         width: '200px',
-        height: '150px',
+        height: '125px',
         opacity: '0.5',
         textAlign: 'center',
         transition: 'all 0.2s',
         borderRadius: '10px',
+        overflow: 'hidden',
     };
     var mouseoverCss = {
         width: '500px',
@@ -853,6 +902,12 @@ var documentReady = function() {
     }).mouseout(function(event) {
         $(this).css(normalCss);
     });
+    if(DEBUG.enabled) {
+        // n vou mudar o css
+        // mantém ele sempre ativo
+        autoLattes.div.css(mouseoverCss);
+        autoLattes.div.unbind('mouseout');
+    }
 
     autoLattes.div.html('<h3 style="color: red;">autoLattes</h3><br>');
 
