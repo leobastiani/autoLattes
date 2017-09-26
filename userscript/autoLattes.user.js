@@ -124,6 +124,9 @@ autoLattes = {
 
             // reseto a mensagem
             autoLattes.Msg.reset();
+
+            // atualiza a página
+            autoLattes.Msg.update();
         },
 
 
