@@ -43,7 +43,7 @@ var DEBUG = {
     enabled: true,
 
     // mensagens do tipo alert
-    debugMsg: false,
+    debugMsg: true,
 
     // aciona o debugger que está dentro da debug
     debug_is_debugger: false,
@@ -90,6 +90,7 @@ autoLattes = {
             if(autoLattes.Writer.msg) {
                 // se estou no modo escrita
                 // cheguei no final e devo parar
+                // de escrever
                 autoLattes.Writer.stop();
             }
 
@@ -102,6 +103,16 @@ autoLattes = {
 
             // atalho para a mensagem raiz
             var msg = this.src;
+            // agora eu salvo a data
+            var date = new Date();
+            msg.date = (date).toJSON();
+            // vou procurar o título dela
+            msg.title = this.nome(msg);
+            // se o título for vazio, mudo ele
+            if(msg.title == '') {
+                var timeStr = date.getHours() + ':' + date.getMinutes() + ':' + date.getSeconds();
+                msg.title = 'Alteração em '+timeStr;
+            }
             
             // neste ponto, eu salvo a mensagem raiz com final
             // o próximo ponteiro para null
@@ -126,7 +137,7 @@ autoLattes = {
             });
             elem.appendTo('#autoLattes-msgs');
             elem.click(function(event) {
-                autoLattes.File.write('autoLattes', msg);
+                autoLattes.File.write(autoLattes.Msg.nome(msg), msg);
             });
         },
 
@@ -134,10 +145,28 @@ autoLattes = {
         nome: function(msg) {
             msg = msg !== undefined ? msg : this.src;
 
-            var data = new Date();
-            var timeStr = data.getHours() + ':' + data.getMinutes() + ':' + data.getSeconds();
+            if('title' in msg) {
+                return msg['title'];
+            }
 
-            return 'Alteração em '+timeStr;
+            if(msg.val) {
+                if(msg.val.val) {
+                    for(var i=0; i<msg.val.val.length; i++) {
+                        var elem = msg.val.val[i];
+                        if(elem.name == 'f_titulo') {
+                            return elem.val;
+                        }
+                    }
+                }
+            }
+
+            // procura na submensagem
+            if(msg.msg) {
+                return this.nome(msg.msg);
+            }
+
+            // aqui eu sei que não consegui encontrar nenhum nome
+            return '';
         },
 
 
@@ -303,49 +332,6 @@ autoLattes = {
             }
 
 
-            var gridWrappers = autoLattes.Writer.msg.val.gridWrapper;
-            // TODO: remover && false
-            if(gridWrappers && gridWrappers.length && false) {
-                // se mudei algo, devo sair dps
-                var exit = false;
-                // todas as gridWrappers
-                var allGws = autoLattes.Modal.GridWrappers();
-                allGws.each(function(index, el) {
-                    // para cada gws, vejo se ele está na tabela de
-                    // gridWrappers que devo fazer uma inserção
-                    var gws = this;
-                    gridWrappers.forEach(function (elem, index) {
-                        if(gws.nome == elem.nome) {
-                            if(!elem.val.length) {
-                                // não tem elementos
-                                return false;
-                            }
-                            // encontrei
-                            // pra cada elem.val
-                            // insiro em gws.input
-                            var val = elem.val.shift();
-                            var input = $(gws.$).find(gws.input.selector);
-                            gws.input.val(val);
-                            // tem q dar dois
-                            gws.input.trigger('accept');
-                            // devo sair dps
-                            exit = true;
-                            // pode ser que apareça uma janela de confirmação
-                            // tenta confirmar
-                            autoLattes.Modal.$('.botao.salvar:not(.autoLattes):visible').last().click();
-                            setTimeout(function () {
-                                autoLattes.Writer.vals(cb);
-                            }, 100);
-                            return false;
-                        }
-                    });
-                });
-                if(exit) {
-                    return ;
-                }
-            }
-
-
             // agr só falta os checkboxes
             var checkboxes = autoLattes.Writer.msg.val.checkbox;
             if(checkboxes && checkboxes.length) {
@@ -370,6 +356,45 @@ autoLattes = {
                 // deixando a lista vazia
                 autoLattes.Writer.msg.val.checkbox = [];
             }
+
+            
+            var grids = autoLattes.Writer.msg.val.grid;
+            if(grids && grids.length) {
+                grids.forEach(function (gridObj) {
+                    // objeto do grid
+                    var grid = autoLattes.Modal.$.window[gridObj.nome];
+                    // adiciono os dados no provider
+                    var provider = grid.getProvider();
+                    var dados = gridObj.dados;
+                    // vou inserir os dados na ordem inversa
+                    // pq sempre insiro no começo
+                    // ex: insiro o 1, 2, 3
+                    // aparece 3, 2, 1
+                    for(var i=dados.length-1; i>=0; i--) {
+                        var dado = dados[i];
+                        provider.unshift(dado);
+                    }
+                    // agr dou akele generate pra finalizar
+                    grid.generate();
+                });
+
+                // acabei de inserir, vou apagá-los da msg
+                autoLattes.Writer.msg.val.grid = [];
+            }
+
+            var criarGrids = autoLattes.Writer.msg.val.criarGrid;
+            if(criarGrids && criarGrids.length) {
+                criarGrids.forEach(function (criarGridObj) {
+                    // o objeto
+                    var criarGrid = autoLattes.Modal.$.window[criarGridObj.nome];
+                    var dados = criarGridObj.dados;
+
+                    dados.forEach(function (dado, index) {
+                        criarGrid.adicionarDados(dado);
+                    });
+                });
+            }
+
 
             // marquei tudo oq tinha q marcar
             // posso sair
@@ -405,215 +430,285 @@ autoLattes = {
          *
          * retorna um dict que vai dentro da mensagem
          */
-        read: function () {
-            var isVisible = function (elem, type) {
-                type = type !== undefined ? type : $(elem).attr('type');
+        read: {
+            do: function () {
+                var isVisible = function (elem, type) {
+                    type = type !== undefined ? type : $(elem).attr('type');
 
-                // começa aqui outra parte
-                // agora eu devo retirar os invisiveis
-                // mas se ele for hidden, ai eu deixo ele passar
-                if(type == 'hidden') {
+                    // começa aqui outra parte
+                    // agora eu devo retirar os invisiveis
+                    // mas se ele for hidden, ai eu deixo ele passar
+                    if(type == 'hidden') {
+                        return true;
+                    }
+                    // agr se ele for invisível, não passará
+                    if(!$(elem).is(':visible')) {
+                        return false;
+                    }
+
                     return true;
                 }
-                // agr se ele for invisível, não passará
-                if(!$(elem).is(':visible')) {
-                    return false;
-                }
 
-                return true;
-            }
+                var res = {};
+                var $ = autoLattes.Modal.$;
 
-            var res = {};
-            var $ = autoLattes.Modal.$;
+                // vamos tratar os elementos
+                // que são definidos pela função do
+                // jquery .val
 
-            // vamos tratar os elementos
-            // que são definidos pela função do
-            // jquery .val
-
-            // vamos ver esses elementos
-            var excludeTypes = ['radio', 'checkbox'];
-            var elems = $('input, select, textarea').filter(function(index) {
-                var name = $(this).attr('name');
-                if(!name) {
-                    // nem nome ele tem
-                    return false;
-                }
-                
-                // não quero elementos que
-                // não tem nada dentro
-                if($(this).val() == '') {
-                    return false;
-                }
+                // vamos ver esses elementos
+                var excludeTypes = ['radio', 'checkbox'];
+                var elems = $('input, select, textarea').filter(function(index) {
+                    var name = $(this).attr('name');
+                    if(!name) {
+                        // nem nome ele tem
+                        return false;
+                    }
+                    
+                    // não quero elementos que
+                    // não tem nada dentro
+                    if($(this).val() == '') {
+                        return false;
+                    }
 
 
-                var type = $(this).attr('type');
-                if(type === undefined) {
-                    // deixa ele ai
+                    var type = $(this).attr('type');
+                    if(type === undefined) {
+                        // deixa ele ai
+                        return true;
+                    }
+                    if($.inArray(type, excludeTypes) != -1) {
+                        // ele está dentro de excludeTypes
+                        return false;
+                    }
+
+
+                    if(!isVisible(this, type)) {
+                        // não é visivel
+                        return false;
+                    }
+
+
+                    // não entrou em nenhuma categoria
+                    // deixa passar
                     return true;
-                }
-                if($.inArray(type, excludeTypes) != -1) {
-                    // ele está dentro de excludeTypes
-                    return false;
-                }
-
-
-                if(!isVisible(this, type)) {
-                    // não é visivel
-                    return false;
-                }
-
-
-                // não entrou em nenhuma categoria
-                // deixa passar
-                return true;
-            });
-
-
-            // aqui temos em elem
-            // vários elementos com nome
-            // e valores que vamos definir
-            var vals = [];
-            elems.each(function(index, el) {
-                vals.push({
-                    name: $(this).attr('name'),
-                    val: $(this).val(),
                 });
-            });
-            if(vals.length) {
-                res['val'] = vals;
-            }
 
 
-            // agora, vamos colocar os checkbox e os radios
-            // que estão assinalados
-            var assinalaveis = $('input[type=checkbox], input[type=radio]').filter(function(index) {
-                if(!isVisible(this, 'checkbox')) {
-                    return false;
-                }
-
-                // ok, ele é visivel
-                // agr eu qro saber
-                // se ele está ativado
-                if($(this).is(':checked')) {
-                    // sim, ele está ativo
-                    return true;
-                }
-                // não, ele está inativo
-                // nem preciso salvar ele
-                return false;
-            });
-
-            // agora eu separo
-            // o que checkbox
-            // e o que é radio
-            var checkboxes = [];
-            var radios = [];
-            assinalaveis.each(function(index, el) {
-                var name = $(this).attr('name');
-                if($(this).is('[type=checkbox]')) {
-                    checkboxes.push(name);
-                }
-                if($(this).is('[type=radio]')) {
-                    // aqui, eu tenho q adicionar
-                    // o nome e seu valor
-                    radios.push({
-                        name: name,
+                // aqui temos em elem
+                // vários elementos com nome
+                // e valores que vamos definir
+                var vals = [];
+                elems.each(function(index, el) {
+                    vals.push({
+                        name: $(this).attr('name'),
                         val: $(this).val(),
                     });
-                }
-            });
-
-            // adiciono eles
-            // ao res
-            if(checkboxes.length) {
-                res['checkbox'] = checkboxes;
-            }
-            if(radios.length) {
-                res['radio'] = radios;
-            }
-
-
-
-            // agora vamos tratar
-            // as tabelas do tipo sugests
-            // que são encontradas na utlima tela
-            // de
-            // Produções > Artigos completos publicados em periódicos
-            // vamos fazer esse procedimento para cada tabela
-            var gridWrappers = [];
-            autoLattes.Modal.GridWrappers().each(function(index, el) {
-                if(!this.input.length) {
-                    // se não input
-                    // não preciso guardar seus valores
-                    return true;
-                }
-
-                // se n tem nenhum valor
-                // n preciso guardar
-                if(this.valores.length == 0) {
-                    return true;
-                }
-
-                // preciso guardar seus valores
-                gridWrappers.push({
-                    nome: this.nome,
-                    val: this.valores,
                 });
-            });
-
-            if(gridWrappers.length) {
-                res['gridWrapper'] = gridWrappers;
-            }
+                if(vals.length) {
+                    res['val'] = vals;
+                }
 
 
+                // agora, vamos colocar os checkbox e os radios
+                // que estão assinalados
+                var assinalaveis = $('input[type=checkbox], input[type=radio]').filter(function(index) {
+                    if(!isVisible(this, 'checkbox')) {
+                        return false;
+                    }
 
-            return res;
-        },
-
-        GridWrappers: function () {
-            return autoLattes.Modal.$('.grid-wrapper').map(function(index, elem) {
-                return new autoLattes.Modal.GridWrapper(this);
-            });
-        },
-
-        GridWrapper: function (self) {
-            var $ = autoLattes.Modal.$;
-            this.$ = self;
-            this.input = $(self).find('.suggest-wrapper input');
-            // o nome é a primeira linha, segunda coluna
-            // a primeira coluna é a ordem
-            this.nome = $('.grid-wrapper').eq(0).find('th').eq(1).text();
-
-            // todas as colunas
-            var colunas = $(self).find('.cell-wrapper');
-            // aqui eu remova a ultima coluna
-            this.colunas = [];
-            // valores da coluna
-            this.valores = [];
-            // este objeto
-            var gw = this;
-            colunas.each(function(index, el) {
-                if(colunas.length-1 == index) {
+                    // ok, ele é visivel
+                    // agr eu qro saber
+                    // se ele está ativado
+                    if($(this).is(':checked')) {
+                        // sim, ele está ativo
+                        return true;
+                    }
+                    // não, ele está inativo
+                    // nem preciso salvar ele
                     return false;
+                });
+
+                // agora eu separo
+                // o que checkbox
+                // e o que é radio
+                var checkboxes = [];
+                var radios = [];
+                assinalaveis.each(function(index, el) {
+                    var name = $(this).attr('name');
+                    if($(this).is('[type=checkbox]')) {
+                        checkboxes.push(name);
+                    }
+                    if($(this).is('[type=radio]')) {
+                        // aqui, eu tenho q adicionar
+                        // o nome e seu valor
+                        radios.push({
+                            name: name,
+                            val: $(this).val(),
+                        });
+                    }
+                });
+
+                // adiciono eles
+                // ao res
+                if(checkboxes.length) {
+                    res['checkbox'] = checkboxes;
+                }
+                if(radios.length) {
+                    res['radio'] = radios;
                 }
 
-                if($(this).find('img').length) {
-                    // encontrei uma imagem
-                    // deve ser a imagem da lixeira
-                    // não estou interessado
-                    return true;
-                }
-                var text = $(this).text();
-                if(text == '') {
-                    // tmb n estou interessado
-                    return true;
+
+
+                // os campos especiais são tratados a parte
+                // nessa função
+                var special = autoLattes.Modal.read.special();
+                if(special) {
+                    for(var i in special) {
+                        res[i] = special[i];
+                    }
                 }
 
-                // só remove o ultimo
-                gw.colunas.push($(this));
-                gw.valores.push(text);
-            });
+                return res;
+            },
 
+            // faz a leitura de elementos especiais
+            // do tipo $.grid
+            // e criarGrid
+            // dar CTRL+F nos arquivos do lattes
+            // detalhe: vi no PKG_PROJ
+            special: function () {
+                var $ = autoLattes.Modal.$;
+                var res = {
+                    grid: [
+                        // objetos do tipo
+                        // {
+                            // nome: nome da variavel!!
+                            // dados: dados a serem inseridos, menos o último!!
+                                // pq o último é sempre vazio
+                                // cada dado é um dict
+                        // }
+                    ],
+                    criarGrid: [
+                        // aqui vai ser as mesmas propriedades: nome e dados
+                        // mas cada dado é um array
+                        // por que? qm definiu isso foram os
+                        // criadores do lattes, eu só segui
+                    ],
+                };
+
+                // vamos fazer a leitura do
+                // tipo grid
+                // que é o $.grid
+                // e logo na sequencia
+                // no mesmo for
+                // do tipo criarGrid
+                var win = $.window;
+                for(var varName in win) {
+                    if(win[varName]) {
+                        // identifico se é do tipo
+                        // $.grid
+                        // dessa forma
+                        if(win[varName].editCell) {
+                            // cada varName aqui é uma variavel de grid
+                            var grid = win[varName];
+
+                            // achei uma grid
+                            // não posso tratar grids que
+                            // não estão visíveis
+                            // como fazer isso?
+                            // Solução: pegar a primeira
+                            // linha da Row
+                            // ver se ela tá visível
+                            if(!grid.getRows().first().is(':visible')) {
+                                // não está
+                                continue;
+                            }
+
+                            // agr vamos obter seus dados
+                            // eles estão no Provider
+                            // o último dado é sempre vazio
+                            // mas vou testar ele aqui
+                            // se não for vazio, um dia vou perceber
+                            var provider = grid.getProvider();
+                            if(provider.length > 1) {
+                                // ou seja, há dados nele!
+                                // vamos copiá-los
+                                var dados = [];
+                                for(var i=0; i<provider.length-1; i++) {
+                                    // ou seja, pego todos menos o último
+                                    dados.push(provider[i]);
+                                }
+
+                                // já posso adicionar ele aos resultados
+                                res.grid.push({
+                                    nome: varName,
+                                    dados: dados,
+                                });
+                            }
+                            else {
+                                // provider tem q ser 1
+                                if(provider.length != 1) {
+                                    alert('Erro que não deveria ter acontecido! Tem debugger;');
+                                    debugger;
+                                }
+                            }
+
+                            // agr eu testo que o último dado tme que ser
+                            // vazio
+                            // se não for, tem algo estranho
+                            var isVazio = function (obj) {for(var i in obj) return false; return true;}
+                            if(!isVazio(provider[provider.length-1])) {
+                                alert('Erro que não deveria ter acontecido! Tem debugger;');
+                                debugger;
+                            }
+                        }
+
+                        // identifico se é do tipo
+                        // criarGrid
+                        // dessa forma
+                        else if(win[varName].tabelaId) {
+                            // temos aqui os criarGrid
+                            var criarGrid = win[varName];
+                            // todos os dados dessa grid
+                            var dados = [];
+                            for(var i=0; i<criarGrid.getItems().length; i++) {
+                                var dado = [];
+                                for(var j=0; j<criarGrid.numCol; j++) {
+                                    // vamos obter a linha desse dado
+                                    dado.push(criarGrid.getConteudo(i, j));
+                                }
+                                dados.push(dado);
+                            }
+                            // terminei de obter os dados
+                            if(dados.length) {
+                                // se há dados
+                                // adiciono ele ao resultado final
+                                res.criarGrid.push({
+                                    nome: varName,
+                                    dados: dados,
+                                });
+                            }
+                        }
+                    }
+                }
+
+                if(res.grid.length == 0 && res.criarGrid.length == 0) {
+                    // tudo vazio
+                    return null;
+                }
+                if(res.grid.length == 0) {
+                    // só tem criarGrid
+                    delete res.grid;
+                }
+                if(res.criarGrid.length == 0) {
+                    delete res.criarGrid;
+                }
+
+
+
+                return res;
+            }
         },
 
 
@@ -677,7 +772,7 @@ var documentReady = function() {
         minHeight: '150px',
         opacity: initialOpacity,
         textAlign: 'center',
-        transition: 'opacity 0.2s',
+        transition: 'all 0.2s',
     });
     // aumenta a opacidade qndo o mouse tá sobre ele
     autoLattes.div.mouseover(function(event) {
@@ -780,7 +875,7 @@ var documentReady = function() {
 
                     // vamos começar a coleta de informações
                     // primeiro, reseto os valores
-                    msg.val = autoLattes.Modal.read();
+                    msg.val = autoLattes.Modal.read.do();
                 })
                 .bind('click', function(e) {
                     // o que acontece dps
@@ -827,7 +922,6 @@ var documentReady = function() {
         // no campo de sugestão
         // suggest-wrapper
         if($(this).is('iframe')) {
-
             // a função chamaUrl é um ajax
             // que não utiliza os meios de ajax pelo jQuery
             // vamos mudar a função para definir que todas
@@ -847,8 +941,7 @@ var documentReady = function() {
                 }
             }
 
-
-            var doc = $(this).document();            
+            var doc = $(this).document();
 
             /*$(doc).on('edit', 'body', function(e) {
 
@@ -899,11 +992,24 @@ var documentReady = function() {
         }
 
         // verifico aqui se posso chamar a função onModal
-        var possoPassar = (function () {
+        // a função onModal que é chamada pra um determinado iframe
+        // recolhe ou escreve informações nesse iframe
+        var possoPassar = function () {
             // se só há um modal, posso passar
-            var modais = $('.modal_holder:visible');
+            var modais = window.jQuery('.modal_holder:visible');
             if(modais.length == 1) {
                 return true;
+            }
+
+            // se este modal, possui aquela barra lateral
+            // muito fácil de ser reconhecida
+            // devo passar
+            var ultimoModal = modais.last();
+            var ultimoIframe = ultimoModal.find('iframe');
+            if(ultimoIframe.length) {
+                if(ultimoIframe.contents().find('.navegacao > .areaSelecao:visible').length) {
+                    return true;
+                }
             }
 
             // se há mais de um modal
@@ -915,16 +1021,42 @@ var documentReady = function() {
             var iframePenultimo = penultimoModal.find('.iframe');
             if(iframePenultimo.length) {
                 if(iframePenultimo.contents().find('.adicionar').length) {
-                    return true;
+                    // ele tem o botão adicionar
+
+                    // a quantidade total de modais for >= 3
+                    // devo sair
+                    var qntModais = modais.length;
+                    // agr somo os modais do tipo winWrapper
+                    if(autoLattes.Modal.$) {
+                        qntModais += autoLattes.Modal.$('.win-wrapper:visible').length;
+                    }
+                    // se há mais de 3 modais, saio
+                    if(qntModais >= 3) {
+                        return false;
+                    }
+
+                    // não tem mais de 3 modais
+                    // então tá tudo okay
+                    return true; 
                 }
             }
 
             // caso contrário
             return false;
-        }());
+        };
+
+        // para depuração
+        if(DEBUG.enabled) {
+            var _possoPassar = possoPassar;
+            possoPassar = function () {
+                var res = _possoPassar();
+                console.log("possoPassar():", res);
+                return res;
+            }
+        }
 
 
-        if(!possoPassar) {
+        if(!possoPassar()) {
             return ;
         }
 
@@ -944,6 +1076,9 @@ var documentReady = function() {
                 }
 
                 debug('winWrapper', winWrapper);
+                if(!possoPassar()) {
+                    return ;
+                }
                 winWrapper.each(function(index, winWrapper) {
                     var $title = $(winWrapper).find('.win-title');
                     var title = $title.length ? $title.text() : '';
@@ -1030,6 +1165,7 @@ var elemTo$ = function (elem) {
 window.jQueryFn = {
     // funções com this
     t: {
+
         // preciso chamar um click antes da função onclick
         onclick: function (fn) {
             var clickFunc = $(this).prop('onclick');
@@ -1286,6 +1422,7 @@ var test = function () {
         val(t);
         t.do();
     });
+
 }
 
 // clica nos menus de cima
@@ -1547,20 +1684,30 @@ window.test = test;
 
 
 
+// inline testes
+// digite aqui os comandos para serem executados
+// sem a criação de um novo caso de teste
+
+
 
 /******************************************************
  * FileAPI
  ******************************************************/
 autoLattes.File = {
+    header: 'autoLattes - ',
     ext: '.txt',
 
     write: function(file_name, content) {
         if(typeof content === "object") {
             content = JSON.stringify(content, null, 4);
+            // para auxiliar na leitura do bloco de notas
+            // da plataforma windows
+            // vamos trocar os \n
+            content = content.replace(/\r?\n/gm, '\r\n');
         }
         var a = document.createElement('a');
         a.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(content));
-        a.setAttribute('download', file_name+this.ext);
+        a.setAttribute('download', this.header + file_name + this.ext);
         a.click();
     },
 
@@ -1610,3 +1757,4 @@ autoLattes.File = {
 
 // fim
 });
+    
