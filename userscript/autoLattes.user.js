@@ -40,10 +40,10 @@ var TEST = {
 };
 
 var DEBUG = {
-    enabled: true,
+    enabled: false,
 
     // mensagens do tipo alert
-    debugMsg: true,
+    debugMsg: false,
 
     // aciona o debugger que está dentro da debug
     debug_is_debugger: false,
@@ -119,26 +119,11 @@ autoLattes = {
             // para que não tenha ação após ela
             this.all.push(msg);
 
+            // insiro no storage
+            autoLattes.Storage.unshift(msg);
+
             // reseto a mensagem
             autoLattes.Msg.reset();
-
-
-            // remove aquela mensagem de q nd foi alterado
-            $('#autoLattes-semAlteracoes').remove();
-
-            // faço um html para a msg aparecer
-            var elem = $('<a>'+autoLattes.Msg.nome(msg)+'</a>');
-            elem.css({
-                display: 'block',
-                cursor: 'pointer',
-                textDecoration: 'underline',
-                color: 'red',
-                fontWeight: 'bold',
-            });
-            elem.appendTo('#autoLattes-msgs');
-            elem.click(function(event) {
-                autoLattes.File.write(autoLattes.Msg.nome(msg), msg);
-            });
         },
 
 
@@ -168,6 +153,40 @@ autoLattes = {
             // aqui eu sei que não consegui encontrar nenhum nome
             return '';
         },
+
+
+        /**
+         * Atualiza a div sempre que uma nova msg for inserida
+         */
+        update: function () {
+            var msgs = autoLattes.Storage.get();
+            if(msgs.length) {
+                // remove aquela mensagem de q nd foi alterado
+                $('#autoLattes-semAlteracoes').hide();
+            } else {
+                $('#autoLattes-semAlteracoes').show();
+            }
+
+            // remove todas as msgs para adicionar novas
+            $('.autoLattes-msg').remove();
+
+            msgs.forEach(function (msg, index) {
+                // faço um html para a msg aparecer
+                var elem = $('<a>'+autoLattes.Msg.nome(msg)+'</a>');
+                elem.css({
+                    display: 'block',
+                    cursor: 'pointer',
+                    textDecoration: 'underline',
+                    color: 'red',
+                    fontWeight: 'bold',
+                });
+                elem.addClass('autoLattes-msg');
+                elem.appendTo('#autoLattes-msgs');
+                elem.click(function(event) {
+                    autoLattes.File.write(autoLattes.Msg.nome(msg), msg);
+                });
+            });
+        }
 
 
     },
@@ -744,6 +763,51 @@ autoLattes = {
         }
     },
 
+
+    /******************************************************
+     * StorageAPI
+     ******************************************************/
+    Storage: {
+        // ponteiro do array
+        ptr: null,
+        itemName: 'autoLattes',
+        max: 6,
+        get: function () {
+            if(this.ptr === null) {
+                // se há sessionStorage
+                if(window.sessionStorage) {
+                    if(window.sessionStorage.getItem(this.itemName)) {
+                        this.ptr = JSON.parse(window.sessionStorage.getItem(this.itemName));
+                    }
+                }
+                else {
+                    this.ptr = [];
+                }
+            }
+            return this.ptr;
+        },
+        set: function (val) {
+            if(val) {
+                this.ptr = val;
+            }
+            if(window.sessionStorage) {
+                window.sessionStorage.setItem(this.itemName, JSON.stringify(this.ptr));
+            }
+        },
+
+        // insere no começo
+        unshift: function (val) {
+            debugger;
+            // atualizo
+            this.get();
+            this.ptr.unshift(val);
+            if(this.ptr.length >= this.max) {
+                this.ptr.pop();
+            }
+            this.set();
+        },
+    },
+
 };
 
 
@@ -762,23 +826,29 @@ var documentReady = function() {
     // objeto autoLattes
     autoLattes.div = $('<div id="autoLattes">').appendTo($('.cont').first());
     // vamos adicionar agr o CSS
-    var initialOpacity = 0.5;
-    autoLattes.div.css({
+    var normalCss = {
         position: 'absolute',
         right: '10px',
         top: '10px',
         background: '#FFF',
         width: '200px',
-        minHeight: '150px',
-        opacity: initialOpacity,
+        height: '150px',
+        opacity: '0.5',
         textAlign: 'center',
         transition: 'all 0.2s',
-    });
+        borderRadius: '10px',
+    };
+    var mouseoverCss = {
+        width: '500px',
+        height: '260px',
+        opacity: '1',
+    };
+    autoLattes.div.css(normalCss);
     // aumenta a opacidade qndo o mouse tá sobre ele
     autoLattes.div.mouseover(function(event) {
-        $(this).css('opacity', 1);
+        $(this).css(mouseoverCss);
     }).mouseout(function(event) {
-        $(this).css('opacity', initialOpacity);
+        $(this).css(normalCss);
     });
 
     autoLattes.div.html('<h3 style="color: red;">autoLattes</h3><br>');
@@ -796,6 +866,9 @@ var documentReady = function() {
             }
         });
     });
+
+    // se tinha msgs antes, atualizo o .div
+    autoLattes.Msg.update();
 
 
 
@@ -1753,6 +1826,7 @@ autoLattes.File = {
         });
     },
 };
+
 
 
 // fim
